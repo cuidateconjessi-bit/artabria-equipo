@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Artabria · Mi Plan</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script>const _w=console.warn.bind(console);console.warn=(...a)=>{if(String(a[0]||"").includes("Babel"))return;_w(...a);};</script>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Georgia,serif;background:#fdf8f0;-webkit-font-smoothing:antialiased}input,textarea,button{font-family:Georgia,serif}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px}</style>
+</head>
+<body><div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect} = React;
+
+// ─── Colors ──────────────────────────────────────────────────────────────────
+const G="#2d6a4f",OG="#c9a84c",CR="#fdf8f0",DK="#1a1a2e",SF="#52b788",LG="#f4e4bc",RD="#c1121f",PU="#6b4fa0";
+
+// ─── Firebase ─────────────────────────────────────────────────────────────────
+const FB="https://artabria-equipo-1fdb2-default-rtdb.firebaseio.com";
+const fbGet=async(p)=>{try{const r=await fetch(FB+"/"+p+".json");return await r.json();}catch{return null;}};
+const fbSet=async(p,d)=>{try{await fetch(FB+"/"+p+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)});}catch{}};
+
+const safe=(n)=>n.replace(/[.#$[\]\s]/g,"_");
+const saveDay=async(u,lid,day,d)=>{await fbSet("users/"+lid+"/"+safe(u)+"/days/day"+day,{...d,ts:Date.now()});await fbSet("users/"+lid+"/"+safe(u)+"/name",u);};
+const loadDays=async(u,lid)=>{const d=await fbGet("users/"+lid+"/"+safe(u)+"/days");if(!d)return{};const r={};Object.keys(d).forEach(k=>{const n=parseInt(k.replace("day",""));if(!isNaN(n))r[n]=d[k];});return r;};
+const saveProf=async(u,lid,p)=>{await fbSet("users/"+lid+"/"+safe(u)+"/profile",p);await fbSet("users/"+lid+"/"+safe(u)+"/name",u);};
+const loadProf=async(u,lid)=>fbGet("users/"+lid+"/"+safe(u)+"/profile");
+
+// ─── Groq AI ──────────────────────────────────────────────────────────────────
+const GROQ_KEY="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";
+const callGroq=async(prompt,max=600)=>{
+  const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+GROQ_KEY},
+    body:JSON.stringify({model:"llama-3.1-8b-instant",max_tokens:max,temperature:0.85,
+      messages:[{role:"system",content:"Eres experta en marketing para distribuidoras de Artabria Nutraceuticos. Contenido auténtico, cercano, sin lenguaje de venta agresiva ni clichés. Cada post único y personal."},{role:"user",content:prompt}]})
+  });
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message);
+  return d.choices?.[0]?.message?.content||"No se pudo generar.";
+};
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const LEADERS=[{id:"jessica",name:"Jessica",emoji:"👑",color:OG},{id:"raquel",name:"Raquel",emoji:"🌿",color:SF}];
+const PRODS=[
+  {name:"Café 5.0 Artabria",benefit:"energía natural y concentración",emoji:"☕"},
+  {name:"Chocoslender",benefit:"control de peso sin sacrificio",emoji:"🍫"},
+  {name:"Colágeno 10.000mg",benefit:"piel, cabello y articulaciones",emoji:"✨"},
+  {name:"Caña Zero Artabria",benefit:"bienestar digestivo",emoji:"🌿"},
+  {name:"I.D. Intelligent Drink",benefit:"hidratación y rendimiento",emoji:"💧"},
+];
+const CTYPES=[{id:"valor",l:"Post de Valor",i:"💎"},{id:"historia",l:"Historia Personal",i:"💬"},{id:"testimonio",l:"Testimonio",i:"⭐"},{id:"rutina",l:"Mi Rutina",i:"🌅"},{id:"tip",l:"Tip Experta",i:"🧠"},{id:"behind",l:"Behind the Scenes",i:"🎬"}];
+const TONES=["cercana y empática","directa y motivadora","divertida y desenfadada","reflexiva y profunda","energética y entusiasta"];
+const HOOKS=["Empieza con una pregunta incómoda pero real","Empieza con una confesión personal","Empieza con 'Nadie te cuenta que...'","Empieza con un dato que sorprenda","Empieza con una afirmación contraintuitiva"];
+const EXTRAS=["Incluye una anécdota corta tuya","Menciona un error que cometías antes","Termina con una pregunta que invite a comentar","Incluye una comparación antes/después","Menciona a alguien cercano que también lo notó"];
+const NICHES=[
+  {id:"fibro",emoji:"🌸",label:"Fibromialgia / Dolor crónico",ctx:"Habla desde tu experiencia con el dolor. Nunca prometas curar. Siempre 'lo que a mí me ayuda'."},
+  {id:"metabolismo",emoji:"🔄",label:"Metabolismo lento",ctx:"Valida su frustración antes que nadie. Empieza reconociendo que hace todo bien y el cuerpo no responde."},
+  {id:"menopausia",emoji:"🔥",label:"Menopausia",ctx:"Habla abiertamente de sofocos, niebla mental, insomnio. Normalizarlos te convierte en referente."},
+  {id:"tiroides",emoji:"🦋",label:"Tiroides / Hipotiroidismo",ctx:"Nunca sugieras dejar medicación. Habla de apoyo complementario y tu experiencia personal."},
+  {id:"pcos",emoji:"🌺",label:"Ovarios Poliquísticos (SOP)",ctx:"Habla de la parte invisible: fatiga, ansiedad hormonal, inflamación. Conecta más que los síntomas obvios."},
+  {id:"peso",emoji:"⚖️",label:"Pérdida de peso",ctx:"Evita el antes/después agresivo. Habla de energía y hábitos sostenibles. El peso es consecuencia."},
+  {id:"jovenes",emoji:"✨",label:"Mujer joven / sin transformación grande",ctx:"Tú eres el puente. Usa los resultados de tus clientas como contenido. Habla desde el acompañamiento."},
+  {id:"general",emoji:"🌿",label:"Bienestar general",ctx:"Publica variado y observa quién interactúa. Ellas te dirán cuál es tu nicho."},
+];
+const TASKS=(nb)=>[
+  {id:1,plat:"Instagram",icon:"📸",task:"Publicar 1 post de valor en el feed",proof:"link",pl:"Enlace a tu publicación",tip:"Usa el generador de IA para crear el caption."},
+  {id:2,plat:"TikTok",icon:"🎵",task:"Subir 1 Reel o vídeo en TikTok sobre un producto o bienestar",proof:"link",pl:"Enlace al vídeo publicado",tip:"15-30 segundos es suficiente. Habla de cómo te ayuda a ti."},
+  {id:3,plat:"Stories",icon:"🎬",task:"Subir 3-5 stories: una de tu día, una del producto, una interactiva",proof:"txt",pl:"Describe brevemente tus stories de hoy",tip:"Las encuestas generan más visibilidad."},
+  {id:4,plat:"DMs",icon:"💌",task:nb?"Envía TÚ el primer mensaje: comenta en 5 publicaciones de tu nicho y escríbeles por DM":"Responde todos los DMs y comentarios pendientes",proof:"txt",pl:nb?"Describe los mensajes que enviaste":"Confirma que has respondido todos los mensajes",tip:nb?"No esperes a que te escriban. Da tú el primer paso.":"Responde en las primeras 2h para favorecer el algoritmo."},
+  {id:5,plat:"Engagement",icon:"🤝",task:"Interactúa con 10 cuentas de bienestar: likes reales + comentarios de valor",proof:"txt",pl:"Describe con quién interactuaste hoy",tip:"Comenta algo que demuestre que leíste el post."},
+  {id:6,plat:"Plan",icon:"🤖",task:"Genera con la IA el contenido de mañana y déjalo guardado",proof:"none",pl:"",tip:"Planificar el día anterior te quita el estrés de improvisar."},
+];
+const ROUTINES=[
+  {id:"r1",icon:"🌄",l:"Ver 1 Reel/TikTok de tu nicho para inspirarte (máx. 10 min)"},
+  {id:"r2",icon:"📓",l:"Anotar 1 idea de contenido que se te ocurra hoy"},
+  {id:"r3",icon:"📊",l:"Revisar métricas de ayer (alcance, guardados, visitas)"},
+  {id:"r4",icon:"💧",l:"Hidratarte y tomarte tu producto Artabria"},
+];
+const MOTIV=[
+  {t:"El algoritmo premia la constancia, no la perfección",b:"No necesitas el post perfecto. Necesitas el post de HOY. Una publicación mediocre publicada vale infinito más que una obra maestra en borradores."},
+  {t:"Tu cliente ideal te está buscando ahora mismo",b:"Hay alguien ahí fuera que necesita exactamente lo que tú ofreces. Si no publicas hoy, la oportunidad de hoy se pierde para siempre."},
+  {t:"No vendes productos, vendes transformaciones",b:"La gente no compra Café 5.0. Compra energía sin nerviosismo. Habla siempre de cómo cambia la vida, no del producto en sí."},
+  {t:"El miedo a publicar es normal. Hazlo igual.",b:"Las distribuidoras que más venden no son las más perfectas. Son las más valientes. La conexión genera confianza. La confianza genera ventas."},
+  {t:"Construyes un negocio, no haces tareas",b:"Cada día que trabajas tus redes es un ladrillo más de tu negocio. Tú decides hoy qué futuro construyes."},
+];
+const BLOCKERS=[
+  {e:"😨",b:"Me da vergüenza que me vean vendiendo",r:"No estás mendigando. Estás ofreciendo algo que funciona. Si crees en Artabria, compartirlo no es vender. Es recomendar.",a:"Publica hoy desde la honestidad: 'Yo también tenía mis dudas, pero...' La vulnerabilidad conecta más que la perfección."},
+  {e:"🤯",b:"Llevo días sin publicar y no sé cómo volver",r:"Nadie recuerda que desapareciste tanto como tú crees. No hace falta una disculpa. Solo vuelve.",a:"Abre Instagram ahora. Sube una story de lo que estás haciendo en este momento. Sin editar. Sin pensar."},
+  {e:"😔",b:"Publico y nadie reacciona. Siento que hablo sola",r:"Esto es lo más normal al empezar y es lo que hace que el 80% abandone justo antes de que empiece a funcionar.",a:"Comenta hoy en 5 cuentas grandes de bienestar con un comentario real. Eso te da visibilidad inmediata."},
+  {e:"🙈",b:"Siento que no soy suficientemente buena todavía",r:"La gente no sigue a cuentas perfectas. Sigue a personas reales. Tus dudas y tu proceso son tu mayor activo.",a:"Publica hoy algo que normalmente guardarías para 'cuando seas mejor'. La autenticidad gana siempre."},
+  {e:"⏰",b:"No tengo tiempo",r:"20 minutos al día son suficientes si son los 20 minutos correctos: un post con la IA, tres stories, responder mensajes.",a:"Pon ahora mismo una alarma diaria de 20 minutos con el nombre 'Mi negocio'."},
+  {e:"😤",b:"Intento vender y la gente me deja en visto",r:"Estás vendiendo demasiado pronto. La venta ocurre después de la confianza, no antes.",a:"Escoge 3 personas que te dijeron que no. Envíales hoy algo útil sin pedir nada a cambio."},
+];
+const TEAM_TASKS=[
+  {id:"t1",cat:"LIBERTAD FINANCIERA",icon:"💬",task:"Publica hablando de POR QUÉ empezaste: sin mencionar dinero, habla de libertad o tiempo",tip:"Tu razón personal conecta más que cualquier cifra.",proof:"link",pl:"Enlace a tu publicación"},
+  {id:"t2",cat:"LIBERTAD FINANCIERA",icon:"🎥",task:"Graba un vídeo mostrando cómo es tu día con libertad de horarios",tip:"La autenticidad vende más que la producción perfecta.",proof:"link",pl:"Enlace al vídeo"},
+  {id:"t3",cat:"OPORTUNIDAD DE NEGOCIO",icon:"🤝",task:"Identifica 3 personas de tu entorno y envíales un mensaje PERSONALIZADO (no copia-pega)",tip:"El mensaje tiene que empezar hablando de ELLAS, no de ti.",proof:"txt",pl:"Describe brevemente los mensajes enviados"},
+  {id:"t4",cat:"OPORTUNIDAD DE NEGOCIO",icon:"📌",task:"Sube una story: '¿Conoces a alguien que quiera trabajar desde casa con flexibilidad?'",tip:"No filtres antes de preguntar. Deja que la gente se identifique sola.",proof:"txt",pl:"Confirma que has subido la story"},
+];
+const TEAM_TIPS=[
+  {icon:"🧲",t:"Atrae, no persigas",b:"Las mejores incorporaciones vienen de personas que te vieron durante semanas y te escribieron ellas."},
+  {icon:"🪞",t:"La gente no se une al negocio. Se une a ti.",b:"Antes de presentar la oportunidad, la persona ya tomó una decisión basándose en lo que ve de ti."},
+  {icon:"🌱",t:"Calidad sobre cantidad",b:"Una persona comprometida vale más que diez que se apuntan por emoción y desaparecen."},
+  {icon:"📣",t:"Tu historia ES tu herramienta",b:"Cuenta dónde estabas, qué cambió y dónde estás ahora. Eso es el argumento más potente."},
+];
+const ETYPES=[{id:"libertad",l:"Libertad financiera",i:"💸"},{id:"diasReal",l:"Mi día real",i:"📅"},{id:"porQue",l:"Por qué empecé",i:"💬"},{id:"captacion",l:"Invitación suave",i:"🤝"},{id:"objecion",l:"Romper objeciones",i:"🧱"}];
+
+// ─── AI generators ────────────────────────────────────────────────────────────
+const genContent=async(ctype,prod,user,plat,profile,prod2=null)=>{
+  const seed=user.split("").reduce((a,c)=>a+c.charCodeAt(0),0);
+  const tone=TONES[(seed+ctype.length)%TONES.length];
+  const hook=HOOKS[(seed+prod.name.length)%HOOKS.length];
+  const extra=EXTRAS[(seed+plat.length)%EXTRAS.length];
+  const fmt=plat==="tiktok"?"Guion hablado TikTok coloquial max 160 palabras sin hashtags.":"Caption Instagram con emojis y 4-5 hashtags max 200 palabras.";
+  const tipos={valor:"educativo sin vender directamente",historia:"historia personal sobre este producto",testimonio:"testimonio verosímil de clienta",rutina:"rutina diaria donde el producto aparece natural",tip:"tip de experta en bienestar",behind:"behind the scenes del trabajo con Artabria"};
+  const sel=(profile?.niches||[profile?.niche]).filter(Boolean);
+  const nicheCtx=sel.map(id=>NICHES.find(n=>n.id===id)?.ctx).filter(Boolean).join(" Además: ");
+  const hist=profile?.historia?"Historia personal: "+profile.historia+".":"";
+  const prodTxt=prod2?"Combina de forma natural y fluida AMBOS: "+prod.name+" ("+prod.benefit+") Y "+prod2.name+" ("+prod2.benefit+"). Que uno complemente al otro.":"Producto: "+prod.name+" ("+prod.benefit+").";
+  const p="Crea un post "+tipos[ctype]+" para "+user+", distribuidora Artabria. "+prodTxt+(nicheCtx?" Contexto de nicho: "+nicheCtx:"")+hist+" "+hook+". Tono: "+tone+". "+extra+". "+fmt+" Sin precios. Sin lenguaje agresivo.";
+  return callGroq(p);
+};
+const genFrases=async(text,user)=>callGroq("Del siguiente contenido extrae las 3 frases clave más memorables para que "+user+" las use de forma natural. Formato:\n🔑 Frase 1: [max 12 palabras]\n🔑 Frase 2: [max 12 palabras]\n🔑 Frase 3: [max 12 palabras]\n\nContenido: "+text,200);
+const genTeam=async(ctype,user,plat,profile)=>{
+  const tipos={libertad:"sobre libertad financiera sin cifras ni promesas de dinero",diasReal:"mostrando un día real trabajando con flexibilidad",porQue:"contando por qué empezaste este negocio",captacion:"invitación genuina sin presión para quien pudiera estar interesada",objecion:"respondiendo con honestidad los miedos comunes"};
+  const seed=user.split("").reduce((a,c)=>a+c.charCodeAt(0),0);
+  const fmt=plat==="tiktok"?"Guion TikTok coloquial max 150 palabras.":"Caption Instagram emojis 4-5 hashtags max 200 palabras.";
+  const hist=profile?.historia?"Contexto: "+profile.historia+".":"";
+  const p="Crea un post "+tipos[ctype]+" para "+user+", distribuidora Artabria que construye equipo. "+hist+" "+HOOKS[(seed+3)%HOOKS.length]+". Tono: "+TONES[(seed+7)%TONES.length]+". "+fmt+" Sin lenguaje agresivo. Persona real.";
+  return callGroq(p);
+};
+
+// ─── Small UI helpers ─────────────────────────────────────────────────────────
+const Btn=({onClick,disabled,children,v="primary",sm,full,sx={}})=>{
+  const vs={primary:{background:"linear-gradient(135deg,"+DK+","+G+")",color:"#fff"},gold:{background:"linear-gradient(135deg,"+OG+",#a07830)",color:"#1a1a2e"},ghost:{background:"rgba(0,0,0,.05)",color:"rgba(0,0,0,.6)",border:"1.5px solid rgba(0,0,0,.1)"},green:{background:"linear-gradient(135deg,"+G+","+SF+")",color:"#fff"},purple:{background:"linear-gradient(135deg,"+PU+",#3d2060)",color:"#fff"}}[v]||{};
+  return <button onClick={onClick} disabled={!!disabled} style={{padding:sm?"7px 14px":"12px 20px",borderRadius:12,border:"none",cursor:disabled?"not-allowed":"pointer",fontSize:sm?12:14,fontWeight:700,width:full?"100%":undefined,opacity:disabled?.45:1,...vs,...sx}}>{children}</button>;
+};
+
+// ─── Modals ───────────────────────────────────────────────────────────────────
+function BlockerModal({onClose}){
+  const [i,setI]=useState(0);const b=BLOCKERS[i];
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
+    <div style={{background:CR,borderRadius:22,padding:24,maxWidth:440,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:28}}>{b.e}</span><div style={{fontSize:10,color:OG,fontWeight:700,letterSpacing:2}}>HABLEMOS CON HONESTIDAD</div></div>
+      <h3 style={{fontSize:15,color:DK,margin:"0 0 12px",fontStyle:"italic"}}>"{b.b}"</h3>
+      <div style={{background:"rgba(45,106,79,.07)",borderRadius:12,padding:14,marginBottom:10,borderLeft:"4px solid "+G}}><div style={{fontSize:10,color:G,fontWeight:700,marginBottom:5}}>CÓMO VERLO DIFERENTE 🧠</div><p style={{fontSize:13,color:DK,lineHeight:1.7,margin:0}}>{b.r}</p></div>
+      <div style={{background:"rgba(201,168,76,.1)",borderRadius:12,padding:14,marginBottom:16,borderLeft:"4px solid "+OG}}><div style={{fontSize:10,color:OG,fontWeight:700,marginBottom:5}}>ACCIÓN AHORA ⚡</div><p style={{fontSize:13,color:DK,lineHeight:1.7,margin:0}}>{b.a}</p></div>
+      <div style={{display:"flex",gap:8}}><Btn v="ghost" sm onClick={()=>setI((i+1)%BLOCKERS.length)}>Siguiente →</Btn><Btn v="green" sm full onClick={onClose}>¡Voy a por ello! 💪</Btn></div>
+    </div>
+  </div>;
+}
+function MotivModal({onClose}){
+  const m=MOTIV[Math.floor(Math.random()*MOTIV.length)];
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{background:"linear-gradient(135deg,"+DK+",#16213e,"+G+")",borderRadius:22,padding:28,maxWidth:400,width:"100%",textAlign:"center"}}>
+      <div style={{fontSize:40,marginBottom:12}}>🔥</div>
+      <h3 style={{fontSize:18,color:OG,margin:"0 0 12px",lineHeight:1.4}}>{m.t}</h3>
+      <p style={{fontSize:14,color:"rgba(255,255,255,.85)",lineHeight:1.8,margin:"0 0 20px"}}>{m.b}</p>
+      <Btn v="gold" onClick={onClose} full>¡Vamos! 🚀</Btn>
+    </div>
+  </div>;
+}
+
+// ─── AI Panel ─────────────────────────────────────────────────────────────────
+function AIPanel({user,profile}){
+  const [plat,setPlat]=useState("instagram");
+  const [p1,setP1]=useState(0);const [p2,setP2]=useState(-1);
+  const [ctype,setCtype]=useState("valor");
+  const [mode,setMode]=useState("single");
+  const [out,setOut]=useState("");const [frases,setFrases]=useState("");
+  const [loading,setLoading]=useState(false);const [lf,setLf]=useState(false);
+  const [err,setErr]=useState("");
+
+  const gen=async()=>{setLoading(true);setOut("");setFrases("");setErr("");
+    try{const t=await genContent(ctype,PRODS[p1],user,plat,profile,mode==="combo"&&p2>=0?PRODS[p2]:null);setOut(t);}
+    catch(e){setErr("Error: "+e.message);}setLoading(false);};
+  const genF=async()=>{setLf(true);try{setFrases(await genFrases(out,user));}catch(e){setFrases("Error: "+e.message);}setLf(false);};
+
+  const sel=(profile?.niches||[profile?.niche]).filter(Boolean).map(id=>NICHES.find(n=>n.id===id)).filter(Boolean);
+  return <div style={{background:"#fff",borderRadius:18,padding:20,border:"1px solid rgba(201,168,76,.2)",boxShadow:"0 4px 20px rgba(0,0,0,.06)"}}>
+    <div style={{fontSize:15,fontWeight:700,color:DK,marginBottom:3}}>🤖 Generador de Contenido IA</div>
+    <div style={{fontSize:11,color:"rgba(0,0,0,.4)",marginBottom:14}}>Contenido único y personalizado para ti</div>
+    {sel.length>0&&<div style={{background:"rgba(201,168,76,.08)",borderRadius:11,padding:"10px 13px",marginBottom:14,border:"1px solid rgba(201,168,76,.18)"}}>
+      <div style={{fontSize:10,color:OG,fontWeight:700,marginBottom:4}}>{sel.map(n=>n.emoji).join(" ")} {sel.map(n=>n.label).join(" + ").toUpperCase()}</div>
+      {sel.map(n=><div key={n.id} style={{fontSize:11,color:"rgba(0,0,0,.5)",marginBottom:2}}>• {n.ctx}</div>)}
+    </div>}
+    {/* Platform */}
+    <div style={{display:"flex",gap:7,marginBottom:12}}>
+      {[{id:"instagram",bg:"linear-gradient(135deg,#e1306c,#f77737)",l:"📸 Instagram"},{id:"tiktok",bg:"linear-gradient(135deg,#000,#333)",l:"🎵 TikTok"}].map(p=>
+        <button key={p.id} onClick={()=>setPlat(p.id)} style={{flex:1,padding:"9px 0",borderRadius:10,border:plat===p.id?"none":"1.5px solid rgba(0,0,0,.1)",background:plat===p.id?p.bg:"transparent",color:plat===p.id?"#fff":"rgba(0,0,0,.5)",fontWeight:700,fontSize:12,cursor:"pointer"}}>{p.l}</button>
+      )}
+    </div>
+    {/* Mode */}
+    <div style={{display:"flex",gap:7,marginBottom:12}}>
+      {[["single","1 Producto"],["combo","🔗 Combinar 2"]].map(([m,l])=>
+        <button key={m} onClick={()=>{setMode(m);setP2(-1);setOut("");setFrases("");}} style={{flex:1,padding:"8px 0",borderRadius:10,border:mode===m?"2px solid "+OG:"1.5px solid rgba(0,0,0,.1)",background:mode===m?"rgba(201,168,76,.12)":"transparent",color:DK,fontSize:12,cursor:"pointer",fontWeight:mode===m?700:400}}>{l}</button>
+      )}
+    </div>
+    {/* Product 1 */}
+    <div style={{fontSize:10,color:"rgba(0,0,0,.4)",fontWeight:700,letterSpacing:.5,marginBottom:7}}>{mode==="combo"?"PRODUCTO PRINCIPAL":"PRODUCTO"}</div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+      {PRODS.map((p,i)=><button key={i} onClick={()=>setP1(i)} style={{padding:"6px 11px",borderRadius:18,border:p1===i?"2px solid "+OG:"1.5px solid rgba(0,0,0,.1)",background:p1===i?"rgba(201,168,76,.12)":"transparent",color:DK,fontSize:11,cursor:"pointer",fontWeight:p1===i?700:400}}>{p.emoji} {p.name.split(" ").slice(0,2).join(" ")}</button>)}
+    </div>
+    {/* Product 2 */}
+    {mode==="combo"&&<div style={{marginBottom:12}}>
+      <div style={{fontSize:10,color:"rgba(0,0,0,.4)",fontWeight:700,letterSpacing:.5,marginBottom:7}}>SEGUNDO PRODUCTO</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        {PRODS.map((p,i)=>i===p1?null:<button key={i} onClick={()=>setP2(p2===i?-1:i)} style={{padding:"6px 11px",borderRadius:18,border:p2===i?"2px solid "+G:"1.5px solid rgba(0,0,0,.1)",background:p2===i?"rgba(45,106,79,.1)":"transparent",color:DK,fontSize:11,cursor:"pointer",fontWeight:p2===i?700:400}}>{p.emoji} {p.name.split(" ").slice(0,2).join(" ")}</button>)}
+      </div>
+      {p2>=0&&<div style={{marginTop:7,fontSize:11,color:G,fontWeight:600}}>✓ {PRODS[p1].emoji} {PRODS[p1].name.split(" ").slice(0,2).join(" ")} + {PRODS[p2].emoji} {PRODS[p2].name.split(" ").slice(0,2).join(" ")}</div>}
+    </div>}
+    {/* Content type */}
+    <div style={{fontSize:10,color:"rgba(0,0,0,.4)",fontWeight:700,letterSpacing:.5,marginBottom:7}}>TIPO DE CONTENIDO</div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+      {CTYPES.map(ct=><button key={ct.id} onClick={()=>setCtype(ct.id)} style={{padding:"6px 11px",borderRadius:18,border:ctype===ct.id?"2px solid "+G:"1.5px solid rgba(0,0,0,.1)",background:ctype===ct.id?"rgba(45,106,79,.1)":"transparent",color:DK,fontSize:11,cursor:"pointer",fontWeight:ctype===ct.id?700:400}}>{ct.i} {ct.l}</button>)}
+    </div>
+    <Btn onClick={gen} disabled={loading||(mode==="combo"&&p2<0)} v="gold" full>{loading?"✨ Creando...":mode==="combo"&&p2<0?"Elige el segundo producto ↑":"✨ Generar contenido único"}</Btn>
+    {err&&<div style={{marginTop:12,background:"rgba(193,18,31,.07)",borderRadius:10,padding:12,color:RD,fontSize:12}}>{err}</div>}
+    {out&&<div style={{marginTop:14,background:CR,borderRadius:12,padding:18,border:"1px solid rgba(201,168,76,.25)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontSize:10,color:OG,fontWeight:700,letterSpacing:1.5}}>{mode==="combo"?"🔗 COMBO":"CONTENIDO"} · {plat.toUpperCase()}</div>
+        <button onClick={()=>navigator.clipboard?.writeText(out)} style={{background:"rgba(0,0,0,.05)",border:"1px solid rgba(0,0,0,.1)",borderRadius:8,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>📋 Copiar</button>
+      </div>
+      <p style={{fontSize:13,lineHeight:1.85,color:DK,margin:0,whiteSpace:"pre-wrap"}}>{out}</p>
+      <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+        <button onClick={gen} style={{background:"transparent",border:"1px solid rgba(0,0,0,.1)",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"rgba(0,0,0,.5)"}}>🔄 Otra versión</button>
+        <button onClick={genF} disabled={lf} style={{background:"rgba(45,106,79,.1)",border:"1px solid "+G,borderRadius:8,padding:"5px 12px",fontSize:11,cursor:lf?"not-allowed":"pointer",color:G,fontWeight:700,opacity:lf?.6:1}}>{lf?"⏳...":"🔑 3 frases clave"}</button>
+      </div>
+      {frases&&<div style={{marginTop:14,background:"rgba(45,106,79,.08)",borderRadius:12,padding:16,border:"1.5px solid "+G}}>
+        <div style={{fontSize:11,color:G,fontWeight:700,letterSpacing:1,marginBottom:10}}>🔑 FRASES PARA MEMORIZAR</div>
+        <p style={{fontSize:14,lineHeight:2,color:DK,margin:"0 0 10px",whiteSpace:"pre-wrap",fontWeight:500}}>{frases}</p>
+        <div style={{fontSize:11,color:"rgba(0,0,0,.4)",fontStyle:"italic",lineHeight:1.6,marginBottom:10}}>💡 Aprende estas 3 frases y podrás hablar del tema con naturalidad en cualquier conversación o vídeo.</div>
+        <button onClick={()=>navigator.clipboard?.writeText(frases)} style={{background:"transparent",border:"1px solid "+G,borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",color:G}}>📋 Copiar frases</button>
+      </div>}
+    </div>}
+  </div>;
+}
+
+// ─── Team AI Panel ────────────────────────────────────────────────────────────
+function TeamAIPanel({user,profile}){
+  const [plat,setPlat]=useState("instagram");const [ct,setCt]=useState("libertad");
+  const [out,setOut]=useState("");const [loading,setLoading]=useState(false);const [err,setErr]=useState("");
+  const gen=async()=>{setLoading(true);setOut("");setErr("");try{setOut(await genTeam(ct,user,plat,profile));}catch(e){setErr("Error: "+e.message);}setLoading(false);};
+  return <div>
+    <div style={{display:"flex",gap:7,marginBottom:12}}>
+      {[{id:"instagram",bg:"linear-gradient(135deg,#e1306c,#f77737)",l:"📸 Instagram"},{id:"tiktok",bg:"linear-gradient(135deg,#000,#333)",l:"🎵 TikTok"}].map(p=>
+        <button key={p.id} onClick={()=>setPlat(p.id)} style={{flex:1,padding:"9px 0",borderRadius:10,border:plat===p.id?"none":"1.5px solid rgba(0,0,0,.1)",background:plat===p.id?p.bg:"transparent",color:plat===p.id?"#fff":"rgba(0,0,0,.5)",fontWeight:700,fontSize:12,cursor:"pointer"}}>{p.l}</button>
+      )}
+    </div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+      {ETYPES.map(t=><button key={t.id} onClick={()=>setCt(t.id)} style={{padding:"6px 11px",borderRadius:18,border:ct===t.id?"2px solid "+PU:"1.5px solid rgba(0,0,0,.1)",background:ct===t.id?"rgba(107,79,160,.1)":"transparent",color:DK,fontSize:11,cursor:"pointer",fontWeight:ct===t.id?700:400}}>{t.i} {t.l}</button>)}
+    </div>
+    <Btn onClick={gen} disabled={loading} v="purple" full>{loading?"✨ Generando...":"✨ Generar contenido de equipo"}</Btn>
+    {err&&<div style={{marginTop:12,background:"rgba(193,18,31,.07)",borderRadius:10,padding:12,color:RD,fontSize:12}}>{err}</div>}
+    {out&&<div style={{marginTop:14,background:"#fdf8f0",borderRadius:12,padding:18,border:"1px solid rgba(107,79,160,.2)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontSize:10,color:PU,fontWeight:700}}>EQUIPO · {plat.toUpperCase()}</div>
+        <button onClick={()=>navigator.clipboard?.writeText(out)} style={{background:"rgba(0,0,0,.05)",border:"1px solid rgba(0,0,0,.1)",borderRadius:8,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>📋 Copiar</button>
+      </div>
+      <p style={{fontSize:13,lineHeight:1.85,color:DK,margin:0,whiteSpace:"pre-wrap"}}>{out}</p>
+      <button onClick={gen} style={{marginTop:12,background:"transparent",border:"1px solid rgba(0,0,0,.1)",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"rgba(0,0,0,.5)"}}>🔄 Otra versión</button>
+    </div>}
+  </div>;
+}
+
+// ─── Leader Select ────────────────────────────────────────────────────────────
+function LeaderSelect({onSelect}){
+  return <div style={{minHeight:"100vh",background:"linear-gradient(135deg,"+DK+",#16213e,"+G+")",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{background:"rgba(255,255,255,.06)",backdropFilter:"blur(20px)",borderRadius:28,padding:"44px 32px",maxWidth:400,width:"100%",border:"1px solid rgba(201,168,76,.25)",textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:8}}>🌿</div>
+      <div style={{color:OG,fontSize:10,letterSpacing:4,textTransform:"uppercase",marginBottom:6}}>Equipo Comercial</div>
+      <h1 style={{color:"#fff",fontSize:26,margin:"0 0 6px"}}>Artabria</h1>
+      <p style={{color:"rgba(255,255,255,.45)",fontSize:13,margin:"0 0 28px"}}>¿Quién es tu líder de equipo?</p>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {LEADERS.map(l=><div key={l.id} onClick={()=>onSelect(l)} style={{display:"flex",alignItems:"center",gap:14,padding:"18px 20px",borderRadius:16,border:"1.5px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.05)",cursor:"pointer"}}>
+          <span style={{fontSize:28}}>{l.emoji}</span>
+          <div style={{textAlign:"left"}}><div style={{color:"#fff",fontSize:18,fontWeight:700}}>{l.name}</div><div style={{color:"rgba(255,255,255,.4)",fontSize:12,marginTop:2}}>Equipo {l.name}</div></div>
+          <span style={{marginLeft:"auto",color:"rgba(255,255,255,.3)",fontSize:20}}>→</span>
+        </div>)}
+      </div>
+    </div>
+  </div>;
+}
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+function LoginScreen({leader,onLogin,onBack}){
+  const [name,setName]=useState("");const [nb,setNb]=useState(false);
+  return <div style={{minHeight:"100vh",background:"linear-gradient(135deg,"+DK+",#16213e,"+G+")",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{background:"rgba(255,255,255,.06)",backdropFilter:"blur(20px)",borderRadius:28,padding:"44px 32px",maxWidth:400,width:"100%",border:"1px solid rgba(201,168,76,.25)",textAlign:"center"}}>
+      <div style={{fontSize:40,marginBottom:6}}>{leader.emoji}</div>
+      <div style={{color:leader.color,fontSize:10,letterSpacing:4,textTransform:"uppercase",marginBottom:4}}>Equipo {leader.name}</div>
+      <h1 style={{color:"#fff",fontSize:24,margin:"0 0 20px"}}>Artabria</h1>
+      <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&name.trim()&&onLogin(name.trim(),nb)} placeholder="¿Cómo te llamas?" style={{width:"100%",padding:"14px 16px",borderRadius:14,border:"1.5px solid rgba(201,168,76,.35)",background:"rgba(255,255,255,.07)",color:"#fff",fontSize:15,outline:"none",boxSizing:"border-box",marginBottom:12,textAlign:"center"}}/>
+      <div onClick={()=>setNb(!nb)} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",background:"rgba(255,255,255,.04)",borderRadius:12,padding:"11px 14px",marginBottom:16,border:nb?"1.5px solid "+OG:"1.5px solid rgba(255,255,255,.1)"}}>
+        <div style={{width:20,height:20,borderRadius:6,border:nb?"none":"2px solid rgba(255,255,255,.3)",background:nb?OG:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{nb&&<span style={{color:DK,fontSize:12,fontWeight:700}}>✓</span>}</div>
+        <div style={{textAlign:"left"}}><div style={{color:"#fff",fontSize:12,fontWeight:600}}>Soy nueva en el equipo 🌱</div><div style={{color:"rgba(255,255,255,.35)",fontSize:11}}>Activa tareas alternativas</div></div>
+      </div>
+      <button onClick={()=>name.trim()&&onLogin(name.trim(),nb)} disabled={!name.trim()} style={{width:"100%",padding:"14px",borderRadius:14,border:"none",background:name.trim()?"linear-gradient(135deg,"+OG+",#a07830)":"rgba(255,255,255,.1)",color:name.trim()?DK:"rgba(255,255,255,.3)",fontSize:15,fontWeight:700,cursor:name.trim()?"pointer":"not-allowed",marginBottom:12}}>Entrar al plan ✨</button>
+      <button onClick={onBack} style={{background:"none",border:"none",color:"rgba(255,255,255,.3)",fontSize:11,cursor:"pointer"}}>← Cambiar líder</button>
+    </div>
+  </div>;
+}
+
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+function Onboarding({user,leader,onDone}){
+  const [step,setStep]=useState(0);const [niches,setNiches]=useState([]);const [exp,setExp]=useState("");const [hist,setHist]=useState("");const [saving,setSaving]=useState(false);
+  const tog=(id)=>setNiches(p=>p.includes(id)?p.filter(x=>x!==id):p.length>=3?p:[...p,id]);
+  const ctx=niches.length>0?NICHES.find(n=>n.id===niches[0]):null;
+  const done=async()=>{setSaving(true);const p={niche:niches[0]||"general",niches,exp,historia:hist,ts:Date.now()};await saveProf(user,leader.id,p);onDone(p);};
+  return <div style={{minHeight:"100vh",background:"linear-gradient(135deg,"+DK+",#16213e,"+G+")",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{background:"rgba(255,255,255,.05)",backdropFilter:"blur(20px)",borderRadius:26,padding:"32px 26px",maxWidth:460,width:"100%",border:"1px solid rgba(201,168,76,.2)"}}>
+      <div style={{display:"flex",gap:5,marginBottom:22}}>{[0,1,2].map(i=><div key={i} style={{flex:1,height:3,borderRadius:3,background:i<=step?OG:"rgba(255,255,255,.1)"}}/>)}</div>
+      <div style={{fontSize:10,color:"rgba(255,255,255,.3)",letterSpacing:2,marginBottom:14}}>BIENVENIDA · PASO {step+1} DE 3</div>
+      {step===0&&<div>
+        <div style={{fontSize:26,marginBottom:10}}>🎯</div>
+        <h2 style={{color:"#fff",fontSize:19,margin:"0 0 8px"}}>¿Con qué conectas tú?</h2>
+        <p style={{color:"rgba(255,255,255,.5)",fontSize:12,margin:"0 0 10px",lineHeight:1.6}}>Elige las patologías o situaciones que vives o conoces. Hasta 3 opciones.</p>
+        <div style={{background:"rgba(201,168,76,.08)",borderRadius:10,padding:"8px 12px",marginBottom:14,border:"1px solid rgba(201,168,76,.15)"}}><div style={{fontSize:10,color:OG,fontWeight:700,marginBottom:2}}>💡 NOTA</div><div style={{fontSize:11,color:"rgba(255,255,255,.5)",lineHeight:1.5}}>El emprendimiento está en una pestaña separada dentro de la app.</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"rgba(255,255,255,.35)",fontSize:11}}>Hasta 3</span><span style={{color:niches.length>0?OG:"rgba(255,255,255,.2)",fontSize:11,fontWeight:700}}>{niches.length}/3</span></div>
+        <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:300,overflowY:"auto",paddingRight:4}}>
+          {NICHES.map(n=>{const sel=niches.includes(n.id),dis=!sel&&niches.length>=3,ord=niches.indexOf(n.id);return <div key={n.id} onClick={()=>!dis&&tog(n.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",borderRadius:12,border:sel?"2px solid "+OG:"1.5px solid rgba(255,255,255,.1)",background:sel?"rgba(201,168,76,.13)":dis?"rgba(255,255,255,.01)":"rgba(255,255,255,.04)",cursor:dis?"not-allowed":"pointer",opacity:dis?.4:1}}>
+            <span style={{fontSize:18,flexShrink:0}}>{n.emoji}</span>
+            <div style={{flex:1}}><div style={{color:sel?OG:"#fff",fontWeight:sel?700:500,fontSize:13}}>{n.label}</div></div>
+            {sel&&<div style={{width:19,height:19,borderRadius:"50%",background:OG,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:DK,fontSize:10,fontWeight:900}}>{ord+1}</span></div>}
+          </div>;})}
+        </div>
+        {niches.length>0&&<button onClick={()=>setStep(1)} style={{width:"100%",marginTop:12,padding:"13px",borderRadius:13,border:"none",background:"linear-gradient(135deg,"+OG+",#a07830)",color:DK,fontSize:14,fontWeight:700,cursor:"pointer"}}>Continuar →</button>}
+      </div>}
+      {step===1&&<div>
+        <div style={{fontSize:26,marginBottom:10}}>📱</div>
+        <h2 style={{color:"#fff",fontSize:19,margin:"0 0 20px"}}>¿Cómo estás con las redes?</h2>
+        {[{id:"cero",e:"🌱",l:"Empiezo desde cero"},{id:"algo",e:"🌿",l:"Tengo cuenta pero publico poco"},{id:"activa",e:"🌳",l:"Ya publico con regularidad"},{id:"bloqueada",e:"🧱",l:"Estoy bloqueada"}].map(o=><div key={o.id} onClick={()=>setExp(o.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:13,border:exp===o.id?"2px solid "+OG:"1.5px solid rgba(255,255,255,.1)",background:exp===o.id?"rgba(201,168,76,.13)":"rgba(255,255,255,.04)",cursor:"pointer",marginBottom:9}}>
+          <span style={{fontSize:20}}>{o.e}</span><div style={{color:exp===o.id?OG:"#fff",fontWeight:exp===o.id?700:500,fontSize:13}}>{o.l}</div>{exp===o.id&&<span style={{marginLeft:"auto",color:OG}}>✓</span>}
+        </div>)}
+        <div style={{display:"flex",gap:9,marginTop:4}}><button onClick={()=>setStep(0)} style={{flex:1,padding:"12px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.55)",fontSize:13,cursor:"pointer"}}>← Atrás</button>{exp&&<button onClick={()=>setStep(2)} style={{flex:2,padding:"12px",borderRadius:13,border:"none",background:"linear-gradient(135deg,"+OG+",#a07830)",color:DK,fontSize:14,fontWeight:700,cursor:"pointer"}}>Continuar →</button>}</div>
+      </div>}
+      {step===2&&<div>
+        <div style={{fontSize:26,marginBottom:10}}>💬</div>
+        <h2 style={{color:"#fff",fontSize:19,margin:"0 0 8px"}}>Tu historia en 2-3 líneas</h2>
+        <p style={{color:"rgba(255,255,255,.5)",fontSize:12,margin:"0 0 10px",lineHeight:1.6}}>La IA usará esto para personalizar tu contenido. Solo honesta, no perfecta.</p>
+        {ctx&&<div style={{background:"rgba(201,168,76,.1)",borderRadius:11,padding:"11px 13px",marginBottom:12,border:"1px solid rgba(201,168,76,.3)"}}><div style={{fontSize:10,color:OG,fontWeight:700,marginBottom:3}}>🎯 TU ÁNGULO</div><div style={{fontSize:12,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>{ctx.ctx}</div></div>}
+        <textarea value={hist} onChange={e=>setHist(e.target.value)} placeholder="Ej: Llevo años con metabolismo lento y encontré en Artabria algo que de verdad me funciona..." style={{width:"100%",minHeight:90,padding:"12px 13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:13,outline:"none",resize:"vertical",lineHeight:1.6,marginBottom:12,boxSizing:"border-box"}}/>
+        <div style={{display:"flex",gap:9}}><button onClick={()=>setStep(1)} style={{flex:1,padding:"12px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.55)",fontSize:13,cursor:"pointer"}}>← Atrás</button><button onClick={done} disabled={saving} style={{flex:2,padding:"12px",borderRadius:13,border:"none",background:"linear-gradient(135deg,"+OG+",#a07830)",color:DK,fontSize:14,fontWeight:700,cursor:saving?"not-allowed":"pointer"}}>{saving?"Guardando ☁️...":"¡Empezar mi plan! 🚀"}</button></div>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ─── Day Screen ───────────────────────────────────────────────────────────────
+function DayScreen({user,leader,day,progress,nb,profile,onBack,onSave}){
+  const tasks=TASKS(nb);
+  const sv=progress[day]||{};
+  const [chk,setChk]=useState(sv.checked||[]);
+  const [rout,setRout]=useState(sv.routines||[]);
+  const [proofs,setProofs]=useState(sv.proofs||{});
+  const [tchk,setTchk]=useState(sv.teamChecked||[]);
+  const [tproofs,setTproofs]=useState(sv.teamProofs||{});
+  const [alt,setAlt]=useState({});
+  const [motiv,setMotiv]=useState(false);
+  const [blocker,setBlocker]=useState(false);
+  const [tab,setTab]=useState("tasks");
+  const [saving,setSaving]=useState(false);
+
+  const pct=Math.round((chk.length/tasks.length)*100);
+  const allDone=chk.length===tasks.length;
+  const m=MOTIV[day%MOTIV.length];
+
+  const persist=async(c,r,p,tc,tp)=>{setSaving(true);await saveDay(user,leader.id,day,{checked:c,routines:r,proofs:p,teamChecked:tc,teamProofs:tp});onSave();setSaving(false);};
+  const togTask=id=>{const n=chk.includes(id)?chk.filter(x=>x!==id):[...chk,id];setChk(n);persist(n,rout,proofs,tchk,tproofs);};
+  const togRout=id=>{const n=rout.includes(id)?rout.filter(x=>x!==id):[...rout,id];setRout(n);persist(chk,n,proofs,tchk,tproofs);};
+  const saveP=(id,v)=>{const n={...proofs,[id]:v};setProofs(n);persist(chk,rout,n,tchk,tproofs);};
+  const togTeam=id=>{const n=tchk.includes(id)?tchk.filter(x=>x!==id):[...tchk,id];setTchk(n);persist(chk,rout,proofs,n,tproofs);};
+  const saveTP=(id,v)=>{const n={...tproofs,[id]:v};setTproofs(n);persist(chk,rout,proofs,tchk,n);};
+
+  return <div style={{minHeight:"100vh",background:CR}}>
+    {motiv&&<MotivModal onClose={()=>setMotiv(false)}/>}
+    {blocker&&<BlockerModal onClose={()=>setBlocker(false)}/>}
+    {/* Header */}
+    <div style={{background:"linear-gradient(135deg,"+DK+",#16213e,"+G+")",padding:"20px 20px 16px",color:"#fff"}}>
+      <div style={{maxWidth:620,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.12)",border:"none",color:"#fff",borderRadius:16,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>← Volver</button>
+          {saving&&<span style={{fontSize:11,color:"rgba(255,255,255,.4)"}}>☁️ Guardando...</span>}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start"}}>
+          <div><div style={{fontSize:10,color:OG,letterSpacing:3,textTransform:"uppercase",marginBottom:2}}>Día {day} · {user}</div><div style={{fontSize:20,fontWeight:700}}>Tu rutina de hoy</div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:26,fontWeight:700,color:allDone?SF:OG}}>{pct}%</div><div style={{fontSize:10,color:"rgba(255,255,255,.45)"}}>{chk.length}/{tasks.length}</div></div>
+        </div>
+        <div style={{height:4,background:"rgba(255,255,255,.12)",borderRadius:4,marginTop:12,overflow:"hidden"}}><div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,"+OG+","+SF+")",borderRadius:4,transition:"width .4s"}}/></div>
+      </div>
+    </div>
+    {/* Quick actions */}
+    <div style={{background:"#fff",borderBottom:"1px solid rgba(0,0,0,.06)",padding:"8px 16px"}}>
+      <div style={{maxWidth:620,margin:"0 auto",display:"flex",gap:8,overflowX:"auto"}}>
+        <button onClick={()=>setMotiv(true)} style={{whiteSpace:"nowrap",padding:"6px 12px",borderRadius:18,border:"1.5px solid "+OG,background:"rgba(201,168,76,.07)",color:DK,fontSize:11,cursor:"pointer"}}>🔥 Motivación</button>
+        <button onClick={()=>setBlocker(true)} style={{whiteSpace:"nowrap",padding:"6px 12px",borderRadius:18,border:"1.5px solid rgba(107,79,160,.3)",background:"rgba(107,79,160,.06)",color:DK,fontSize:11,cursor:"pointer"}}>🧠 Tengo un bloqueo</button>
+      </div>
+    </div>
+    {/* Tabs */}
+    <div style={{background:"#fff",borderBottom:"1px solid rgba(0,0,0,.08)",overflowX:"auto"}}>
+      <div style={{maxWidth:620,margin:"0 auto",display:"flex",minWidth:380}}>
+        {[["tasks","✅ Tareas"],["routines","🌱 Rutinas"],["ai","🤖 IA"],["team","👑 Equipo"]].map(([k,l])=>
+          <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"12px 4px",border:"none",borderBottom:tab===k?"3px solid "+(k==="team"?OG:G):"3px solid transparent",background:"transparent",color:tab===k?(k==="team"?OG:G):"rgba(0,0,0,.4)",fontSize:11,fontWeight:tab===k?700:400,cursor:"pointer",whiteSpace:"nowrap"}}>{l}</button>
+        )}
+      </div>
+    </div>
+    {/* Content */}
+    <div style={{padding:16,maxWidth:620,margin:"0 auto"}}>
+      {tab==="tasks"&&<div>
+        {tasks.map(t=>{const done=chk.includes(t.id),useAlt=alt[t.id]&&t.alt;return <div key={t.id} style={{background:"#fff",borderRadius:16,padding:16,marginBottom:10,border:done?"1.5px solid "+SF:"1.5px solid rgba(0,0,0,.08)",boxShadow:done?"none":"0 2px 8px rgba(0,0,0,.05)"}}>
+          <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+            <button onClick={()=>togTask(t.id)} style={{width:26,height:26,borderRadius:7,border:done?"none":"2px solid rgba(0,0,0,.15)",background:done?SF:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>{done&&<span style={{color:"#fff",fontSize:13,fontWeight:700}}>✓</span>}</button>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:t.plat==="TikTok"?"#000":"#e1306c",fontWeight:700,letterSpacing:.5,marginBottom:3}}>{t.icon} {t.plat.toUpperCase()}</div>
+              <div style={{fontSize:13,color:done?G:DK,textDecoration:done?"line-through":"none",lineHeight:1.5,fontWeight:done?400:500}}>{useAlt?t.alt:t.task}</div>
+              {t.tip&&<div style={{fontSize:11,color:"rgba(0,0,0,.4)",marginTop:5,fontStyle:"italic",lineHeight:1.5}}>{t.tip}</div>}
+            </div>
+          </div>
+          {t.alt&&!done&&<button onClick={()=>setAlt(s=>({...s,[t.id]:!s[t.id]}))} style={{marginTop:8,fontSize:11,color:OG,background:"rgba(201,168,76,.1)",border:"1px solid rgba(201,168,76,.3)",borderRadius:7,padding:"4px 10px",cursor:"pointer"}}>{useAlt?"← Tarea original":"🔄 Soy nueva, ver alternativa"}</button>}
+          {!done&&t.proof!=="none"&&<div style={{marginTop:10,background:"rgba(0,0,0,.03)",borderRadius:10,padding:12}}>
+            <div style={{fontSize:10,color:"rgba(0,0,0,.4)",fontWeight:700,letterSpacing:.5,marginBottom:6}}>{t.proof==="link"?"🔗":"📝"} {t.pl}</div>
+            <input defaultValue={proofs[t.id]||""} onChange={e=>saveP(t.id,e.target.value)} placeholder={t.proof==="link"?"https://...":"Escribe aquí..."} style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1.5px solid rgba(0,0,0,.1)",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+          </div>}
+          {done&&proofs[t.id]&&<div style={{marginTop:7,fontSize:11,color:SF,background:"rgba(82,183,136,.08)",borderRadius:7,padding:"5px 10px"}}>✅ Prueba guardada ☁️</div>}
+        </div>;})}
+        {allDone&&<div style={{background:"linear-gradient(135deg,"+G+","+SF+")",borderRadius:18,padding:22,textAlign:"center",color:"#fff",marginTop:6}}><div style={{fontSize:40,marginBottom:8}}>🏆</div><div style={{fontSize:18,fontWeight:700,marginBottom:4}}>¡Día {day} completado!</div><div style={{fontSize:13,opacity:.9}}>El día {day+1} ya está desbloqueado. Eres imparable.</div></div>}
+      </div>}
+      {tab==="routines"&&<div>
+        <div style={{background:"rgba(45,106,79,.06)",borderRadius:14,padding:14,marginBottom:16,border:"1px solid rgba(45,106,79,.12)"}}><div style={{fontSize:13,color:G,fontWeight:700,marginBottom:4}}>🌱 Hábitos que construyen el negocio</div><div style={{fontSize:12,color:"rgba(0,0,0,.5)",lineHeight:1.6}}>Pequeñas rutinas que separan a las que tienen resultados de las que siguen esperándolos.</div></div>
+        {ROUTINES.map(r=>{const done=rout.includes(r.id);return <div key={r.id} onClick={()=>togRout(r.id)} style={{display:"flex",alignItems:"center",gap:12,background:done?"rgba(82,183,136,.08)":"#fff",borderRadius:14,padding:"14px 16px",marginBottom:9,cursor:"pointer",border:done?"1.5px solid "+SF:"1.5px solid rgba(0,0,0,.08)"}}>
+          <div style={{width:24,height:24,borderRadius:7,border:done?"none":"2px solid rgba(0,0,0,.15)",background:done?SF:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{done&&<span style={{color:"#fff",fontSize:12,fontWeight:700}}>✓</span>}</div>
+          <div style={{fontSize:13,color:done?G:DK,textDecoration:done?"line-through":"none",lineHeight:1.5}}>{r.icon} {r.l}</div>
+        </div>;})}
+        <div style={{background:"linear-gradient(135deg,"+DK+"ee,"+G+"cc)",borderRadius:18,padding:22,marginTop:18,color:"#fff",textAlign:"center"}}><div style={{fontSize:22,marginBottom:10}}>💬</div><div style={{fontSize:15,fontWeight:700,color:OG,marginBottom:8,lineHeight:1.4}}>{m.t}</div><div style={{fontSize:12,opacity:.85,lineHeight:1.7}}>{m.b}</div></div>
+        {[{p:"📸 Instagram",c:"#e1306c",tips:["Publica en feed 4-5x/semana. Los Reels tienen 3x más alcance.","Stories diarias mantienen tu presencia aunque no publiques en feed.","Usa 3-5 hashtags específicos, no los más populares.","La primera hora tras publicar es crucial: responde comentarios.","Los 'guardados' pesan más que los likes para el algoritmo."]},{p:"🎵 TikTok",c:"#000",tips:["El algoritmo premia la retención: los 3 primeros segundos son clave.","Publica 1-3 veces al día. La consistencia es clave.","Responde comentarios con vídeos: favorito del algoritmo.","3 hashtags generales + 2 de nicho.","No borres vídeos con pocos views: pueden viralizarse después."]}].map(sec=><div key={sec.p} style={{background:"#fff",borderRadius:14,padding:16,marginTop:14,border:"1px solid rgba(0,0,0,.07)"}}><div style={{fontSize:14,fontWeight:700,color:sec.c,marginBottom:10}}>{sec.p}</div>{sec.tips.map((tip,i)=><div key={i} style={{display:"flex",gap:8,marginBottom:7}}><span style={{color:OG,fontWeight:700,flexShrink:0,fontSize:12}}>{i+1}.</span><span style={{fontSize:12,color:"rgba(0,0,0,.6)",lineHeight:1.6}}>{tip}</span></div>)}</div>)}
+      </div>}
+      {tab==="ai"&&<AIPanel user={user} profile={profile}/>}
+      {tab==="team"&&<div>
+        <div style={{background:"linear-gradient(135deg,"+DK+",#3d2060)",borderRadius:18,padding:20,marginBottom:18,color:"#fff",textAlign:"center"}}>
+          <div style={{fontSize:32,marginBottom:6}}>👑</div>
+          <div style={{fontSize:17,fontWeight:700,color:OG,marginBottom:5}}>Construye tu Equipo</div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.65)",lineHeight:1.6,marginBottom:12}}>Pestaña 100% opcional para todas. Habla de emprendimiento sin presión.</div>
+          <div style={{display:"inline-block",background:"rgba(201,168,76,.2)",border:"1px solid "+OG,borderRadius:18,padding:"5px 14px",fontSize:11,color:OG}}>{tchk.length}/{TEAM_TASKS.length} completadas hoy</div>
+        </div>
+        <div style={{background:"#fff",borderRadius:16,padding:18,marginBottom:18,border:"1px solid rgba(107,79,160,.2)"}}>
+          <div style={{fontSize:14,fontWeight:700,color:DK,marginBottom:3}}>🤖 Contenido de Emprendimiento</div>
+          <div style={{fontSize:11,color:"rgba(0,0,0,.4)",marginBottom:14}}>Para hablar de libertad financiera sin sonar agresiva</div>
+          <TeamAIPanel user={user} profile={profile}/>
+        </div>
+        {["LIBERTAD FINANCIERA","OPORTUNIDAD DE NEGOCIO"].map(cat=><div key={cat} style={{marginBottom:20}}>
+          <div style={{fontSize:10,color:OG,fontWeight:700,letterSpacing:2,marginBottom:10,display:"flex",alignItems:"center",gap:7}}><div style={{height:1,flex:1,background:"rgba(201,168,76,.2)"}}/>{cat}<div style={{height:1,flex:1,background:"rgba(201,168,76,.2)"}}/></div>
+          {TEAM_TASKS.filter(t=>t.cat===cat).map(t=>{const done=tchk.includes(t.id);return <div key={t.id} style={{background:done?"rgba(107,79,160,.06)":"#fff",borderRadius:16,padding:16,marginBottom:9,border:done?"1.5px solid rgba(107,79,160,.25)":"1.5px solid rgba(0,0,0,.08)"}}>
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <button onClick={()=>togTeam(t.id)} style={{width:26,height:26,borderRadius:7,border:done?"none":"2px solid rgba(0,0,0,.15)",background:done?PU:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>{done&&<span style={{color:"#fff",fontSize:13,fontWeight:700}}>✓</span>}</button>
+              <div style={{flex:1}}><div style={{fontSize:13,color:done?PU:DK,textDecoration:done?"line-through":"none",lineHeight:1.5,fontWeight:500}}>{t.icon} {t.task}</div><div style={{fontSize:11,color:"rgba(0,0,0,.4)",marginTop:5,fontStyle:"italic",lineHeight:1.5}}>{t.tip}</div></div>
+            </div>
+            {!done&&<div style={{marginTop:10}}><div style={{fontSize:10,color:"rgba(0,0,0,.35)",fontWeight:700,letterSpacing:.5,marginBottom:5}}>{t.proof==="link"?"🔗":"📝"} {t.pl}</div><input defaultValue={tproofs[t.id]||""} onChange={e=>saveTP(t.id,e.target.value)} placeholder={t.proof==="link"?"https://...":"Escribe aquí..."} style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1.5px solid rgba(0,0,0,.1)",fontSize:12,outline:"none",boxSizing:"border-box"}}/></div>}
+          </div>;})}
+        </div>)}
+        <div style={{fontSize:11,color:"rgba(0,0,0,.35)",fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Mentalidad de Líder</div>
+        {TEAM_TIPS.map((t,i)=><div key={i} style={{background:"#fff",borderRadius:14,padding:16,marginBottom:9,border:"1px solid rgba(0,0,0,.07)"}}><div style={{fontSize:20,marginBottom:6}}>{t.icon}</div><div style={{fontSize:13,fontWeight:700,color:DK,marginBottom:6}}>{t.t}</div><div style={{fontSize:12,color:"rgba(0,0,0,.55)",lineHeight:1.7}}>{t.b}</div></div>)}
+      </div>}
+    </div>
+  </div>;
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+function Dashboard({user,leader,nb,profile,progress,onDay,onEdit,onLogout}){
+  const TOTAL=6;
+  const getS=d=>{const p=progress[d];if(!p)return"locked";if((p.checked||[]).length===TOTAL)return"done";if((p.checked||[]).length>0)return"partial";return"unlocked";};
+  const getMax=()=>{let m=1;for(let d=1;d<=30;d++){if((progress[d]?.checked||[]).length===TOTAL)m=d+1;else break;}return Math.min(m,30);};
+  const max=getMax();
+  const comp=Object.values(progress).filter(p=>(p?.checked||[]).length===TOTAL).length;
+  const sel=(profile?.niches||[profile?.niche]).filter(Boolean).map(id=>NICHES.find(n=>n.id===id)).filter(Boolean);
+  return <div style={{minHeight:"100vh",background:CR}}>
+    <div style={{background:"linear-gradient(135deg,"+DK+",#16213e,"+G+")",padding:"26px 20px 20px",color:"#fff"}}>
+      <div style={{maxWidth:600,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:4}}>
+          <div>
+            <div style={{fontSize:10,color:leader.color,letterSpacing:3,textTransform:"uppercase",marginBottom:2}}>{leader.emoji} Equipo {leader.name}</div>
+            <div style={{fontSize:22,fontWeight:700}}>Hola, {user} 👋</div>
+            {sel.length>0&&<div style={{fontSize:11,color:"rgba(255,255,255,.45)",marginTop:2}}>{sel.map(n=>n.emoji).join("")} {sel.map(n=>n.label).join(" + ")}</div>}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:5,alignItems:"flex-end"}}>
+            <button onClick={onLogout} style={{background:"rgba(255,255,255,.1)",border:"none",color:"rgba(255,255,255,.55)",borderRadius:9,padding:"5px 11px",fontSize:11,cursor:"pointer"}}>Salir</button>
+            {profile&&<button onClick={onEdit} style={{background:"rgba(201,168,76,.15)",border:"none",color:OG,borderRadius:9,padding:"5px 11px",fontSize:10,cursor:"pointer"}}>✏️ Mi perfil</button>}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:9,marginTop:16}}>
+          {[{l:"Días completos",v:comp,i:"🏆"},{l:"Día actual",v:max,i:"📅"},{l:"% completado",v:Math.round((comp/30)*100)+"%",i:"📈"}].map((s,i)=><div key={i} style={{background:"rgba(255,255,255,.08)",borderRadius:12,padding:"12px 8px",textAlign:"center",border:"1px solid rgba(255,255,255,.08)"}}><div style={{fontSize:16}}>{s.i}</div><div style={{fontSize:18,fontWeight:700,color:OG,margin:"3px 0 1px"}}>{s.v}</div><div style={{fontSize:9,color:"rgba(255,255,255,.4)",letterSpacing:.5}}>{s.l.toUpperCase()}</div></div>)}
+        </div>
+      </div>
+    </div>
+    <div style={{padding:16,maxWidth:600,margin:"0 auto"}}>
+      <div onClick={()=>onDay(max)} style={{background:"linear-gradient(135deg,rgba(201,168,76,.2),"+LG+")",borderRadius:18,padding:18,marginBottom:20,border:"2px solid rgba(201,168,76,.44)",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontSize:10,color:OG,fontWeight:700,letterSpacing:2,marginBottom:3}}>HOY · DÍA {max}</div><div style={{fontSize:17,fontWeight:700,color:DK}}>Empezar mis tareas</div><div style={{fontSize:11,color:"rgba(0,0,0,.4)",marginTop:2}}>{(progress[max]?.checked||[]).length>0?(progress[max].checked.length)+"/6 completadas · continúa":"Pulsa para empezar el día"}</div></div>
+        <span style={{fontSize:24}}>→</span>
+      </div>
+      <div style={{fontSize:11,color:"rgba(0,0,0,.35)",fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Plan 30 días</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:7}}>
+        {Array.from({length:30},(_,i)=>i+1).map(d=>{
+          const st=d<=max?getS(d):"locked",isT=d===max;
+          const bg={done:"linear-gradient(135deg,"+G+","+SF+")",partial:LG,unlocked:isT?"rgba(201,168,76,.12)":"#fff",locked:"rgba(0,0,0,.03)"}[st];
+          const bd={done:"none",partial:"2px solid "+OG,unlocked:isT?"2px solid "+OG:"1.5px solid rgba(0,0,0,.1)",locked:"1.5px dashed rgba(0,0,0,.08)"}[st];
+          const cl={done:"#fff",partial:DK,unlocked:DK,locked:"rgba(0,0,0,.18)"}[st];
+          return <button key={d} onClick={()=>st!=="locked"&&onDay(d)} disabled={st==="locked"} style={{aspectRatio:"1",borderRadius:10,border:bd,background:bg,color:cl,fontSize:st==="done"?14:12,fontWeight:700,cursor:st!=="locked"?"pointer":"not-allowed",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1}}>
+            <span>{st==="done"?"✅":st==="locked"?"🔒":d}</span>
+            {st==="partial"&&<span style={{fontSize:7,opacity:.7}}>{(progress[d]?.checked||[]).length}/6</span>}
+          </button>;
+        })}
+      </div>
+    </div>
+  </div>;
+}
+
+// ─── Root App ─────────────────────────────────────────────────────────────────
+function App(){
+  const [leader,setLeader]=useState(null);
+  const [user,setUser]=useState(null);
+  const [nb,setNb]=useState(false);
+  const [profile,setProfile]=useState(null);
+  const [progress,setProgress]=useState({});
+  const [loading,setLoading]=useState(false);
+  const [day,setDay]=useState(null);
+  const [onboard,setOnboard]=useState(false);
+
+  // Restore session on load
+  useEffect(()=>{
+    try{
+      const s=localStorage.getItem("art:session");
+      if(!s)return;
+      const {lid,lname,lemoji,lcolor,uname,newbie}=JSON.parse(s);
+      if(!lid||!uname)return;
+      const l={id:lid,name:lname,emoji:lemoji||"🌿",color:lcolor||OG};
+      setLeader(l);setUser(uname);setNb(!!newbie);setLoading(true);
+      Promise.all([loadDays(uname,lid),loadProf(uname,lid)]).then(([p,pr])=>{
+        setProgress(p||{});setProfile(pr||null);
+        if(!pr)setOnboard(true);
+      }).catch(()=>{}).finally(()=>setLoading(false));
+    }catch{setLoading(false);}
+  },[]);
+
+  const login=async(name,newbie)=>{
+    setLoading(true);setUser(name);setNb(newbie);
+    localStorage.setItem("art:session",JSON.stringify({lid:leader.id,lname:leader.name,lemoji:leader.emoji,lcolor:leader.color,uname:name,newbie}));
+    const [p,pr]=await Promise.all([loadDays(name,leader.id),loadProf(name,leader.id)]);
+    setProgress(p||{});setProfile(pr||null);
+    if(!pr)setOnboard(true);
+    setLoading(false);
+  };
+
+  const logout=()=>{localStorage.removeItem("art:session");setLeader(null);setUser(null);setProfile(null);setProgress({});setDay(null);setOnboard(false);};
+  const refresh=async()=>{if(user&&leader){const p=await loadDays(user,leader.id);setProgress(p||{});}};
+  const back=async()=>{await refresh();setDay(null);};
+
+  if(loading)return <div style={{minHeight:"100vh",background:DK,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:OG,fontSize:16}}><div style={{fontSize:36}}>🌿</div><div>Cargando... ☁️</div></div>;
+  if(!leader)return <LeaderSelect onSelect={setLeader}/>;
+  if(!user)return <LoginScreen leader={leader} onLogin={login} onBack={()=>setLeader(null)}/>;
+  if(onboard)return <Onboarding user={user} leader={leader} onDone={pr=>{setProfile(pr);setOnboard(false);}}/>;
+  if(day)return <DayScreen user={user} leader={leader} day={day} progress={progress} nb={nb} profile={profile} onBack={back} onSave={refresh}/>;
+  return <Dashboard user={user} leader={leader} nb={nb} profile={profile} progress={progress} onDay={setDay} onEdit={()=>setOnboard(true)} onLogout={logout}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
