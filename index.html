@@ -35,7 +35,7 @@ const callGroq=async(prompt,max=600)=>{
     method:"POST",
     headers:{"Content-Type":"application/json","Authorization":"Bearer "+GROQ_KEY},
     body:JSON.stringify({model:"llama-3.1-8b-instant",max_tokens:max,temperature:0.85,
-      messages:[{role:"system",content:"Eres experta en marketing para distribuidoras de Artabria Nutraceuticos. Contenido auténtico, cercano, sin lenguaje de venta agresiva ni clichés. Cada post único y personal."},{role:"user",content:prompt}]})
+      messages:[{role:"system",content:"Eres una mujer normal que distribuye Artabria Nutraceuticos y habla con sus amigas por WhatsApp. Escribe como hablarías tú de verdad: con errores de puntuación ocasionales, expresiones coloquiales, emojis naturales (no forzados), sin parecer una agencia de marketing. Nada de frases tipo 'potencia tu bienestar' o 'descubre la transformación'. Habla como lo harías en una historia de Instagram real, no como una marca. Directo, cercano, sin postureo."},{role:"user",content:prompt}]})
   });
   const d=await r.json();
   if(d.error)throw new Error(d.error.message);
@@ -131,6 +131,26 @@ const genTeam=async(ctype,user,plat,profile)=>{
   const hist=profile?.historia?"Contexto: "+profile.historia+".":"";
   const p="Crea un post "+tipos[ctype]+" para "+user+", distribuidora Artabria que construye equipo. "+hist+" "+HOOKS[(seed+3)%HOOKS.length]+". Tono: "+TONES[(seed+7)%TONES.length]+". "+fmt+" Sin lenguaje agresivo. Persona real.";
   return callGroq(p);
+};
+
+// ─── Reto 7 días ──────────────────────────────────────────────────────────────
+const genReto=async(user,profile)=>{
+  const sel=(profile?.niches||[profile?.niche]).filter(Boolean);
+  const nicho=sel.length>0?NICHES.find(n=>n.id===sel[0])?.label||"bienestar general":"bienestar general";
+  const hist=profile?.historia?"Contexto de la distribuidora: "+profile.historia+".":"";
+  const prompt=`Crea un reto de 7 días para las clientas de ${user}, distribuidora de Artabria Nutraceuticos enfocada en ${nicho}. ${hist}
+
+El reto incluye menú completo cada día (desayuno, comida y cena) incorporando los productos Artabria de forma natural y práctica. Los productos disponibles son: Café 5.0 (energía y concentración), Chocoslender (control de peso), Colágeno 10.000mg (piel y articulaciones), Caña Zero (digestión), I.D. Intelligent Drink (hidratación).
+
+Formato para cada día:
+📅 DÍA [N] — [nombre motivador del día]
+🌅 Desayuno: [descripción + producto Artabria si encaja]
+☀️ Comida: [descripción práctica y real]
+🌙 Cena: [descripción ligera y real]
+💪 Reto del día: [una acción pequeña y motivadora]
+
+Que suene real, accesible y motivador. Como lo haría una amiga que sabe de nutrición. Sin tecnicismos. 7 días completos.`;
+  return callGroq(prompt, 1500);
 };
 
 // ─── Small UI helpers ─────────────────────────────────────────────────────────
@@ -262,6 +282,62 @@ function TeamAIPanel({user,profile}){
       </div>
       <p style={{fontSize:13,lineHeight:1.85,color:DK,margin:0,whiteSpace:"pre-wrap"}}>{out}</p>
       <button onClick={gen} style={{marginTop:12,background:"transparent",border:"1px solid rgba(0,0,0,.1)",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"rgba(0,0,0,.5)"}}>🔄 Otra versión</button>
+    </div>}
+  </div>;
+}
+
+// ─── Reto Panel ──────────────────────────────────────────────────────────────
+function RetoPanel({user,profile}){
+  const [out,setOut]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState("");
+  const [copied,setCopied]=useState(false);
+
+  const gen=async()=>{
+    setLoading(true);setOut("");setErr("");setCopied(false);
+    try{setOut(await genReto(user,profile));}
+    catch(e){setErr("Error al generar: "+e.message);}
+    setLoading(false);
+  };
+
+  const copy=()=>{navigator.clipboard?.writeText(out);setCopied(true);setTimeout(()=>setCopied(false),2000);};
+
+  return <div style={{padding:"0 0 20px"}}>
+    <div style={{background:"linear-gradient(135deg,#1a1a2e,#2d6a4f)",borderRadius:18,padding:22,marginBottom:18,color:"#fff",textAlign:"center"}}>
+      <div style={{fontSize:36,marginBottom:8}}>🏆</div>
+      <div style={{fontSize:18,fontWeight:700,color:OG,marginBottom:6}}>Reto de 7 Días</div>
+      <div style={{fontSize:13,color:"rgba(255,255,255,.7)",lineHeight:1.6,marginBottom:14}}>Genera un menú completo de 7 días con desayuno, comida y cena incorporando los productos Artabria. Compártelo con tus clientas para que empiecen el reto juntas.</div>
+      <Btn onClick={gen} disabled={loading} v="gold" full>{loading?"✨ Creando el reto...":"✨ Generar mi reto de 7 días"}</Btn>
+    </div>
+
+    {err&&<div style={{background:"rgba(193,18,31,.07)",borderRadius:12,padding:14,marginBottom:14,color:RD,fontSize:13}}>{err}</div>}
+
+    {!out&&!loading&&<div>
+      <div style={{fontSize:12,color:"rgba(0,0,0,.4)",fontWeight:700,letterSpacing:.5,marginBottom:12,textTransform:"uppercase"}}>¿Cómo usar el reto con tus clientas?</div>
+      {[
+        {i:"📲",t:"Comparte el menú",b:"Copia el reto y envíalo por WhatsApp o Instagram a tus clientas que quieran apuntarse."},
+        {i:"👥",t:"Crea un grupo",b:"Abre un grupo de WhatsApp 'Reto 7 días' con las clientas apuntadas. Ahí cada una puede compartir sus avances."},
+        {i:"📸",t:"Pide fotos del desayuno",b:"Cada mañana pídeles una foto de su desayuno. Eso genera engagement y hace el reto más real."},
+        {i:"🏆",t:"Celebra los resultados",b:"Al terminar los 7 días, pide testimonios y úsalos como contenido. Son tu mejor herramienta de venta."},
+      ].map((t,i)=><div key={i} style={{background:"#fff",borderRadius:14,padding:16,marginBottom:10,border:"1px solid rgba(0,0,0,.07)",display:"flex",gap:12,alignItems:"flex-start"}}>
+        <span style={{fontSize:24,flexShrink:0}}>{t.i}</span>
+        <div><div style={{fontSize:13,fontWeight:700,color:DK,marginBottom:4}}>{t.t}</div><div style={{fontSize:12,color:"rgba(0,0,0,.55)",lineHeight:1.6}}>{t.b}</div></div>
+      </div>)}
+    </div>}
+
+    {out&&<div style={{background:"#fff",borderRadius:16,padding:20,border:"1px solid rgba(45,106,79,.2)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontSize:12,color:G,fontWeight:700,letterSpacing:1}}>🏆 TU RETO DE 7 DÍAS</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={copy} style={{background:copied?"rgba(45,106,79,.1)":"rgba(0,0,0,.05)",border:"1px solid "+(copied?G:"rgba(0,0,0,.1)"),borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",color:copied?G:"rgba(0,0,0,.5)",fontWeight:copied?700:400}}>{copied?"✅ Copiado":"📋 Copiar"}</button>
+          <button onClick={gen} style={{background:"transparent",border:"1px solid rgba(0,0,0,.1)",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"rgba(0,0,0,.5)"}}>🔄 Nuevo</button>
+        </div>
+      </div>
+      <p style={{fontSize:13,lineHeight:2,color:DK,margin:0,whiteSpace:"pre-wrap"}}>{out}</p>
+      <div style={{marginTop:16,background:"rgba(201,168,76,.08)",borderRadius:12,padding:14,border:"1px solid rgba(201,168,76,.2)"}}>
+        <div style={{fontSize:11,color:OG,fontWeight:700,marginBottom:6}}>💡 CÓMO COMPARTIRLO</div>
+        <div style={{fontSize:12,color:"rgba(0,0,0,.55)",lineHeight:1.7}}>Copia este menú y envíalo por WhatsApp a tus clientas. Puedes crear un grupo "Reto 7 días con {user}" donde todas compartan sus avances diarios y fotos. Al final del reto pide testimonios — son tu mejor contenido.</div>
+      </div>
     </div>}
   </div>;
 }
@@ -402,7 +478,7 @@ function DayScreen({user,leader,day,progress,nb,profile,onBack,onSave}){
     {/* Tabs */}
     <div style={{background:"#fff",borderBottom:"1px solid rgba(0,0,0,.08)",overflowX:"auto"}}>
       <div style={{maxWidth:620,margin:"0 auto",display:"flex",minWidth:380}}>
-        {[["tasks","✅ Tareas"],["routines","🌱 Rutinas"],["ai","🤖 IA"],["team","👑 Equipo"]].map(([k,l])=>
+        {[["tasks","✅ Tareas"],["routines","🌱 Rutinas"],["ai","🤖 IA"],["reto","🏆 Reto"],["team","👑 Equipo"]].map(([k,l])=>
           <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"12px 4px",border:"none",borderBottom:tab===k?"3px solid "+(k==="team"?OG:G):"3px solid transparent",background:"transparent",color:tab===k?(k==="team"?OG:G):"rgba(0,0,0,.4)",fontSize:11,fontWeight:tab===k?700:400,cursor:"pointer",whiteSpace:"nowrap"}}>{l}</button>
         )}
       </div>
@@ -438,6 +514,7 @@ function DayScreen({user,leader,day,progress,nb,profile,onBack,onSave}){
         {[{p:"📸 Instagram",c:"#e1306c",tips:["Publica en feed 4-5x/semana. Los Reels tienen 3x más alcance.","Stories diarias mantienen tu presencia aunque no publiques en feed.","Usa 3-5 hashtags específicos, no los más populares.","La primera hora tras publicar es crucial: responde comentarios.","Los 'guardados' pesan más que los likes para el algoritmo."]},{p:"🎵 TikTok",c:"#000",tips:["El algoritmo premia la retención: los 3 primeros segundos son clave.","Publica 1-3 veces al día. La consistencia es clave.","Responde comentarios con vídeos: favorito del algoritmo.","3 hashtags generales + 2 de nicho.","No borres vídeos con pocos views: pueden viralizarse después."]}].map(sec=><div key={sec.p} style={{background:"#fff",borderRadius:14,padding:16,marginTop:14,border:"1px solid rgba(0,0,0,.07)"}}><div style={{fontSize:14,fontWeight:700,color:sec.c,marginBottom:10}}>{sec.p}</div>{sec.tips.map((tip,i)=><div key={i} style={{display:"flex",gap:8,marginBottom:7}}><span style={{color:OG,fontWeight:700,flexShrink:0,fontSize:12}}>{i+1}.</span><span style={{fontSize:12,color:"rgba(0,0,0,.6)",lineHeight:1.6}}>{tip}</span></div>)}</div>)}
       </div>}
       {tab==="ai"&&<AIPanel user={user} profile={profile}/>}
+      {tab==="reto"&&<RetoPanel user={user} profile={profile}/>}
       {tab==="team"&&<div>
         <div style={{background:"linear-gradient(135deg,"+DK+",#3d2060)",borderRadius:18,padding:20,marginBottom:18,color:"#fff",textAlign:"center"}}>
           <div style={{fontSize:32,marginBottom:6}}>👑</div>
