@@ -29,9 +29,7 @@ const saveProf=async(u,lid,p)=>{await fbSet("users/"+lid+"/"+safe(u)+"/profile",
 const loadProf=async(u,lid)=>fbGet("users/"+lid+"/"+safe(u)+"/profile");
 
 // ─── Groq AI ──────────────────────────────────────────────────────────────────
-const GROQ_KEY="TU_NUEVA_CLAVE";
-const callGroq=async(prompt,max=600)=>{
-  const r=await fetch
+const GROQ_KEY="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";
 const callGroq=async(prompt,max=600)=>{
   const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{
     method:"POST",
